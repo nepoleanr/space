@@ -1,0 +1,11 @@
+# Ignore the compiled executable
+space
+
+# Ignore the compressed Alpine image
+*.tar.gz
+
+# Ignore the extracted root filesystem directory
+rootfs/
+
+# Ignore common C++ object files (if you start using more files)
+*.o
