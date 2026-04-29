@@ -81,8 +81,10 @@ int container_main(void* arg) {
         return 1;
     }
 
-    // 5. ISOLATE HOSTNAME
-    sethostname("space", 5);
+    // Set a new hostname for the container
+    std::string hostname = "space";
+    size_t hostname_len = hostname.length();
+    sethostname(hostname.c_str(), hostname_len);
 
     // 6. ISOLATE PROCESSES (Mount /proc)
     // We mount /proc INSIDE the jail so 'ps' works and only shows container apps.
