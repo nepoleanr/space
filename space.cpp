@@ -12,6 +12,7 @@
 #include <fstream>
 #include <string>
 #include <sys/stat.h>
+#include <filesystem>
 
 void setup_cgroups(int pid) {
     // Create a folder directly in the root cgroup mount
@@ -35,6 +36,16 @@ void setup_cgroups(int pid) {
     std::ofstream procs_file(path + "/cgroup.procs");
     procs_file << pid;
     procs_file.close();
+}
+
+
+void ensure_dir(const std::string& path) {
+    try {
+        // create_directories (plural) is the same as mkdir -p
+        std::filesystem::create_directories(path);
+    } catch (const std::exception& e) {
+        std::cerr << "Directory error: " << e.what() << std::endl;
+    }
 }
 
 // This function sets up the container
@@ -74,8 +85,12 @@ int container_main(void* arg) {
         return 1;
     }
     // std::string jail_path = std::string(cwd) + "/rootfs";
-    
     // std::cout << "Jailing process into: " << jail_path << std::endl;
+
+    ensure_dir("var/lib/space/containers/c1/upper");
+    ensure_dir("var/lib/space/containers/c1/work");
+    ensure_dir("var/lib/space/containers/c1/merged");
+
 
     // This combines the "Image" (lower) and a "User layer" (upper)
     // into a single "Merged" view.
