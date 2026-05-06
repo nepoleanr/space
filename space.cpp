@@ -11,16 +11,22 @@
 #include <limits.h> // For PATH_MAX
 #include <fstream>
 #include <string>
+#include <sys/stat.h>
 
 void setup_cgroups(int pid) {
-    // In v2, we create a folder directly in the root cgroup mount
+    // Create a folder directly in the root cgroup mount
     std::string path = "/sys/fs/cgroup/space";
     
-    // 1. Create the folder (the 'cage')
-    system(("sudo mkdir -p " + path).c_str());
+    // Create the folder (the 'cage')
+    // system(("sudo mkdir -p " + path).c_str());
+    if (mkdir(path.c_str(), 0755) == -1) {
+    if (errno != EEXIST) { // If error is NOT "already exists", report it
+        perror("mkdir failed");
+    }
+}
 
-    // 2. Set the limit (e.g., 100MB) 
-    // In v2, the file is named 'memory.max'
+    // Set the limit (e.g., 100MB) 
+    // In the latest versions of Ubuntu, the file is named 'memory.max'
     std::ofstream limit_file(path + "/memory.max");
     limit_file << "100M"; 
     limit_file.close();
@@ -34,6 +40,12 @@ void setup_cgroups(int pid) {
 // This function sets up the container
 int container_main(void* arg) {
     std::cout << "--- Container Started ---" << std::endl;
+
+    char** user_args = (char**)arg; // // Cast the raw pointer back to a string array
+
+    // for (int i = 0; user_args[i] != nullptr; i++) {
+    //     std::cout << "arg[" << i << "] = " << user_args[i] << std::endl;
+    // }
 
     /* 
     The mount function is used to mount a file-system within the container and it marks it private
@@ -74,7 +86,7 @@ int container_main(void* arg) {
         return 1;
     }
 
-    // 4. MOVE TO NEW ROOT
+    // Move to a new root
     // After chroot, we are technically 'outside' the new root until we chdir.
     if (chdir("/") != 0) {
         perror("chdir");
@@ -86,18 +98,32 @@ int container_main(void* arg) {
     size_t hostname_len = hostname.length();
     sethostname(hostname.c_str(), hostname_len);
 
-    // 6. ISOLATE PROCESSES (Mount /proc)
-    // We mount /proc INSIDE the jail so 'ps' works and only shows container apps.
-    // Note: The 'rootfs' folder MUST have an empty /proc directory inside it.
+    /* Step to isolate processes inside the new container (Mount /proc)
+
+    We mount /proc INSIDE the container so 'ps' works and only shows container apps.
+    Note: The 'rootfs' folder MUST have an empty /proc directory inside it.
+
+    mount function arguments:
+    1. proc: This is just a label. We can even change it to any name. But it should be proc for us to understand
+    2. /proc: The /proc inside the rootfs filesystem that should be used as the proc directory
+    3. proc: This tells the kernel to use the proc filesystem driver from the list of registered filesystem drivers
+    4. 0: Use the default read-only behaviour
+    5. NULL: We aren't passing any extra configuration information 
+    */
     if (mount("proc", "/proc", "proc", 0, NULL) == -1) {
         perror("mount-proc (ensure rootfs/proc exists)");
         return 1;
     }
 
-    // 7. LAUNCH SHELL
-    // execv will look for /bin/sh INSIDE your rootfs folder.
-    char* args[] = {(char*)"/bin/sh", NULL};
-    if (execv(args[0], args) == -1) {
+    clearenv(); // to make sure the hostmachine's env variables doesn't leak into the child process
+    setenv("PATH", "/bin:/sbin/:/usr/bin:/usr/sbin", 1);
+    setenv("TERM", "xterm-256color", 1);
+    setenv("HOME", "/root", 1);
+
+    // Launch the shell
+    // execv will look for /bin/sh INSIDE your rootfs folder. And it will replace the C++ code of the child process with the shell
+    std::cout << "Attempting to exec: " << user_args[0] << "\n";
+    if (execv(user_args[0], user_args) == -1) {
         perror("execv failed (is /bin/sh inside your rootfs?)");
         return 1;
     }
@@ -105,8 +131,15 @@ int container_main(void* arg) {
     return 0;
 }
 
-int main() {
+int main(int argc, char** argv) {
     std::cout << "--- Starting Parent Process ---" << std::endl;
+
+    if (argc < 2) {
+        std::cerr << "Usage: sudo ./space <command> <args...>\n";
+        return 1;
+    }
+
+    char** container_args = &argv[1];
 
     // Allocate stack memory for the child process
     const int STACK_SIZE = 65536;
@@ -119,7 +152,7 @@ int main() {
     // SIGCHLD: Tells the parent when the child finishes
     // NULL: We are passing NULL as an argument into the container_main function. We can use this to pass configuration data into the new container if required
     int container_pid = clone(container_main, stack + STACK_SIZE, 
-                              CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWNS | SIGCHLD, NULL);
+                              CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWNS | SIGCHLD, container_args);
 
     if (container_pid == -1) {
         perror("clone");
