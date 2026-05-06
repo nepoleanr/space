@@ -9,3 +9,7 @@ rootfs/
 
 # Ignore common C++ object files (if you start using more files)
 *.o
+
+test
+test.cpp
+todo
