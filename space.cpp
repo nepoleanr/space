@@ -66,21 +66,31 @@ int container_main(void* arg) {
         return 1;
     }
 
-    // 2. DYNAMIC PATH DETECTION
+    // DYNAMIC PATH DETECTION
     // We look for a folder named "rootfs" in the current directory.
     char cwd[PATH_MAX];
     if (getcwd(cwd, sizeof(cwd)) == nullptr) {
         perror("getcwd");
         return 1;
     }
-    std::string jail_path = std::string(cwd) + "/rootfs";
+    // std::string jail_path = std::string(cwd) + "/rootfs";
     
-    std::cout << "Jailing process into: " << jail_path << std::endl;
+    // std::cout << "Jailing process into: " << jail_path << std::endl;
 
-    // 3. ENTER THE JAIL (chroot)
-    // This makes the 'rootfs' folder appear as the root (/) to the container.
-    if (chroot(jail_path.c_str()) != 0) {
-        std::cerr << "Error: Could not chroot. Ensure a 'rootfs' folder exists in: " 
+    // This combines the "Image" (lower) and a "User layer" (upper)
+    // into a single "Merged" view.
+    std::string options = "lowerdir=var/lib/space/images/alpine,"
+                      "upperdir=var/lib/space/containers/c1/upper,"
+                      "workdir=var/lib/space/containers/c1/work";
+
+    if (mount("overlay", "var/lib/space/containers/c1/merged", "overlay", 0, options.c_str()) == -1) {
+        perror("overlay mount failed");
+        return 1;
+    }
+
+    // ENTER THE JAIL (chroot)
+    if (chroot("var/lib/space/containers/c1/merged") != 0) {
+        std::cerr << "Error: Could not chroot. Ensure a folder exists in: " 
                   << cwd << std::endl;
         perror("chroot failed");
         return 1;
