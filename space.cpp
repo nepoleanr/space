@@ -13,6 +13,22 @@
 #include <string>
 #include <sys/stat.h>
 #include <filesystem>
+#include <ctime>
+#include <sstream>
+#include <iomanip>
+
+std::string generate_id() {
+    std::time_t t = std::time(nullptr);
+    std::stringstream ss;
+    ss << "container-" << std::hex << t; // e.g., container-6638f2a2
+    return ss.str();
+}
+
+struct container_config {
+    std::string image_name;
+    std::string container_id;
+    char** exec_args;
+};
 
 void setup_cgroups(int pid) {
     // Create a folder directly in the root cgroup mount
@@ -41,7 +57,6 @@ void setup_cgroups(int pid) {
 
 void ensure_dir(const std::string& path) {
     try {
-        // create_directories (plural) is the same as mkdir -p
         std::filesystem::create_directories(path);
     } catch (const std::exception& e) {
         std::cerr << "Directory error: " << e.what() << std::endl;
@@ -52,11 +67,9 @@ void ensure_dir(const std::string& path) {
 int container_main(void* arg) {
     std::cout << "--- Container Started ---" << std::endl;
 
-    char** user_args = (char**)arg; // // Cast the raw pointer back to a string array
+    container_config* config = (container_config*)arg;
 
-    // for (int i = 0; user_args[i] != nullptr; i++) {
-    //     std::cout << "arg[" << i << "] = " << user_args[i] << std::endl;
-    // }
+    char** user_args = (char**)arg; // // Cast the raw pointer back to a string array
 
     /* 
     The mount function is used to mount a file-system within the container and it marks it private
@@ -87,24 +100,36 @@ int container_main(void* arg) {
     // std::string jail_path = std::string(cwd) + "/rootfs";
     // std::cout << "Jailing process into: " << jail_path << std::endl;
 
-    ensure_dir("var/lib/space/containers/c1/upper");
-    ensure_dir("var/lib/space/containers/c1/work");
-    ensure_dir("var/lib/space/containers/c1/merged");
+    std::string base = "var/lib/space/containers/" + config->container_id;
+    std::string lower = "var/lib/space/images/" + config->image_name;
+    std::string upper = base + "/upper";
+    std::string work  = base + "/work";
+    std::string merged = base + "/merged";
 
+
+    // ensure_dir("var/lib/space/containers/c1/upper");
+    // ensure_dir("var/lib/space/containers/c1/work");
+    // ensure_dir("var/lib/space/containers/c1/merged");
+
+    ensure_dir("var/lib/space/containers"); 
+    ensure_dir(base);
+    ensure_dir(upper);
+    ensure_dir(work);
+    ensure_dir(merged);
 
     // This combines the "Image" (lower) and a "User layer" (upper)
     // into a single "Merged" view.
-    std::string options = "lowerdir=var/lib/space/images/alpine,"
-                      "upperdir=var/lib/space/containers/c1/upper,"
-                      "workdir=var/lib/space/containers/c1/work";
+    std::string options = "lowerdir=" + lower + "," +
+                          "upperdir=" + upper + "," +
+                          "workdir="  + work;
 
-    if (mount("overlay", "var/lib/space/containers/c1/merged", "overlay", 0, options.c_str()) == -1) {
+    if (mount("overlay", merged.c_str(), "overlay", 0, options.c_str()) == -1) {
         perror("overlay mount failed");
         return 1;
     }
 
     // ENTER THE JAIL (chroot)
-    if (chroot("var/lib/space/containers/c1/merged") != 0) {
+    if (chroot(merged.c_str()) != 0) {
         std::cerr << "Error: Could not chroot. Ensure a folder exists in: " 
                   << cwd << std::endl;
         perror("chroot failed");
@@ -147,9 +172,9 @@ int container_main(void* arg) {
 
     // Launch the shell
     // execv will look for /bin/sh INSIDE your rootfs folder. And it will replace the C++ code of the child process with the shell
-    std::cout << "Attempting to exec: " << user_args[0] << "\n";
-    if (execv(user_args[0], user_args) == -1) {
-        perror("execv failed (is /bin/sh inside your rootfs?)");
+    std::cout << "Attempting to exec: " << config->exec_args[0] << "\n";
+    if (execv(config->exec_args[0], config->exec_args) == -1) {
+        perror("execv failed");
         return 1;
     }
 
@@ -164,7 +189,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    char** container_args = &argv[1];
+    // char** container_args = &argv[1];
+
+    container_config config;
+    config.image_name = argv[1]; // "alpine"
+    config.container_id = generate_id();
+    config.exec_args = &argv[2]; // "/bin/sh"
 
     // Allocate stack memory for the child process
     const int STACK_SIZE = 65536;
@@ -177,7 +207,7 @@ int main(int argc, char** argv) {
     // SIGCHLD: Tells the parent when the child finishes
     // NULL: We are passing NULL as an argument into the container_main function. We can use this to pass configuration data into the new container if required
     int container_pid = clone(container_main, stack + STACK_SIZE, 
-                              CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWNS | SIGCHLD, container_args);
+                              CLONE_NEWUTS | CLONE_NEWPID | CLONE_NEWNS | SIGCHLD, &config);
 
     if (container_pid == -1) {
         perror("clone");
