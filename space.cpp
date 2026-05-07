@@ -16,6 +16,7 @@
 #include <ctime>
 #include <sstream>
 #include <iomanip>
+// #include <filesystem>
 
 std::string generate_id() {
     std::time_t t = std::time(nullptr);
@@ -69,7 +70,7 @@ int container_main(void* arg) {
 
     container_config* config = (container_config*)arg;
 
-    char** user_args = (char**)arg; // // Cast the raw pointer back to a string array
+    // char** user_args = (char**)arg; // // Cast the raw pointer back to a string array
 
     /* 
     The mount function is used to mount a file-system within the container and it marks it private
@@ -92,30 +93,37 @@ int container_main(void* arg) {
 
     // DYNAMIC PATH DETECTION
     // We look for a folder named "rootfs" in the current directory.
-    char cwd[PATH_MAX];
-    if (getcwd(cwd, sizeof(cwd)) == nullptr) {
-        perror("getcwd");
-        return 1;
-    }
+    // char cwd[PATH_MAX];
+    // if (getcwd(cwd, sizeof(cwd)) == nullptr) {
+    //     perror("getcwd");
+    //     return 1;
+    // }
     // std::string jail_path = std::string(cwd) + "/rootfs";
     // std::cout << "Jailing process into: " << jail_path << std::endl;
 
     std::string base = "var/lib/space/containers/" + config->container_id;
     std::string lower = "var/lib/space/images/" + config->image_name;
     std::string upper = base + "/upper";
-    std::string work  = base + "/work";
     std::string merged = base + "/merged";
+    
+    // cleaning the work directory to prevent kernel mount errors
+    std::string work  = base + "/work";
+    std::filesystem::remove_all(work);
+    std::filesystem::create_directories(work);
 
+    // ensure_dir("var/lib/space/containers"); 
+    // ensure_dir(base);
+    // ensure_dir(upper);
+    // ensure_dir(work);
+    // ensure_dir(merged);
 
-    // ensure_dir("var/lib/space/containers/c1/upper");
-    // ensure_dir("var/lib/space/containers/c1/work");
-    // ensure_dir("var/lib/space/containers/c1/merged");
+    std::filesystem::create_directories(upper);
+    std::filesystem::create_directories(merged);
 
-    ensure_dir("var/lib/space/containers"); 
-    ensure_dir(base);
-    ensure_dir(upper);
-    ensure_dir(work);
-    ensure_dir(merged);
+    // We save config->image_name so we can rebuild 'lower' later
+    std::ofstream metadata(base + "/image_ref.txt");
+    metadata << config->image_name;
+    metadata.close();
 
     // This combines the "Image" (lower) and a "User layer" (upper)
     // into a single "Merged" view.
@@ -130,8 +138,8 @@ int container_main(void* arg) {
 
     // ENTER THE JAIL (chroot)
     if (chroot(merged.c_str()) != 0) {
-        std::cerr << "Error: Could not chroot. Ensure a folder exists in: " 
-                  << cwd << std::endl;
+        std::cerr << "Error: Could not chroot. Ensure the chroot directory exists" 
+                  << std::endl;
         perror("chroot failed");
         return 1;
     }
@@ -181,20 +189,52 @@ int container_main(void* arg) {
     return 0;
 }
 
-int main(int argc, char** argv) {
+int main(int argc, char** argv) { // sudo ./space alpine /bin/sh
     std::cout << "--- Starting Parent Process ---" << std::endl;
 
     if (argc < 2) {
-        std::cerr << "Usage: sudo ./space <command> <args...>\n";
+        std::cerr << "Usage: sudo ./space [run|start|rm] ...\n";
         return 1;
     }
 
-    // char** container_args = &argv[1];
-
+    std::string command = argv[1];
     container_config config;
-    config.image_name = argv[1]; // "alpine"
-    config.container_id = generate_id();
-    config.exec_args = &argv[2]; // "/bin/sh"
+
+    if (command == "run") {
+        // Expected: sudo ./space run --name <container_name> <image> <command>
+        std::string container_name;
+        std::string image_name;
+        char** exec_args = nullptr;
+
+        for (int i = 2; i < argc; i++) {
+            std::string arg = argv[i];
+            if (arg == "--name" && i + 1 < argc) {
+                container_name = argv[++i];
+            } else if (image_name.empty()) {
+                image_name = arg;
+                exec_args = &argv[i+1]; // Everything after image is the command
+            }
+        }
+
+        if (container_name.empty()) {
+            container_name = generate_id(); // Fallback to dynamic ID if no name provided
+        }
+
+        // This makes sure we don't use the run command for an already existing container
+        std::string base_path = "var/lib/space/containers/" + container_name;
+        if (std::filesystem::exists(base_path)) {
+            std::cerr << "Error: Container \"" << container_name << "\" already exists.\n";
+            std::cerr << "Use 'space start' to resume it or 'space rm' to delete it.\n";
+            return 1;
+        }
+
+        config = { image_name, container_name, exec_args };
+    }
+
+    // container_config config;
+    // config.image_name = argv[1]; // "alpine"
+    // config.container_id = generate_id();
+    // config.exec_args = &argv[2]; // "/bin/sh"
 
     // Allocate stack memory for the child process
     const int STACK_SIZE = 65536;
