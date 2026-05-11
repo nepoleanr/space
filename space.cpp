@@ -56,13 +56,13 @@ void setup_cgroups(int pid) {
 }
 
 
-void ensure_dir(const std::string& path) {
-    try {
-        std::filesystem::create_directories(path);
-    } catch (const std::exception& e) {
-        std::cerr << "Directory error: " << e.what() << std::endl;
-    }
-}
+// void ensure_dir(const std::string& path) {
+//     try {
+//         std::filesystem::create_directories(path);
+//     } catch (const std::exception& e) {
+//         std::cerr << "Directory error: " << e.what() << std::endl;
+//     }
+// }
 
 // This function sets up the container
 int container_main(void* arg) {
@@ -189,7 +189,7 @@ int container_main(void* arg) {
     return 0;
 }
 
-int main(int argc, char** argv) { // sudo ./space alpine /bin/sh
+int main(int argc, char** argv) { // sudo ./space run --name test alpine /bin/sh
     std::cout << "--- Starting Parent Process ---" << std::endl;
 
     if (argc < 2) {
