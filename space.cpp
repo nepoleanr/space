@@ -229,6 +229,52 @@ int main(int argc, char** argv) { // sudo ./space run --name test alpine /bin/sh
         }
 
         config = { image_name, container_name, exec_args };
+    } else if (command == "images") {
+        std::string path = "var/lib/space/images";
+        
+        if (!std::filesystem::exists(path)) {
+            std::cout << "No images found. Path does not exist: " << path << std::endl;
+            return 0;
+        }
+
+        std::cout << std::left << std::setw(20) << "IMAGE NAME" << std::endl;
+        std::cout << "--------------------" << std::endl;
+        
+        for (const auto& entry : std::filesystem::directory_iterator(path)) {
+            if (entry.is_directory()) {
+                std::cout << entry.path().filename().string() << std::endl;
+            }
+        }
+        return 0;
+
+    } else if (command == "ps") {
+        std::string path = "var/lib/space/containers";
+
+        if (!std::filesystem::exists(path)) {
+            std::cout << "No containers found." << std::endl;
+            return 0;
+        }
+
+        std::cout << std::left << std::setw(25) << "CONTAINER ID" 
+                  << std::setw(20) << "IMAGE" << std::endl;
+        std::cout << "-----------------------------------------------" << std::endl;
+
+        for (const auto& entry : std::filesystem::directory_iterator(path)) {
+            if (entry.is_directory()) {
+                std::string name = entry.path().filename().string();
+                
+                // Read the image name from our "breadcrumb" file
+                std::ifstream img_file(entry.path().string() + "/image_ref.txt");
+                std::string img_name = "unknown";
+                if (img_file.is_open()) {
+                    std::getline(img_file, img_name);
+                }
+
+                std::cout << std::left << std::setw(25) << name 
+                          << std::setw(20) << img_name << std::endl;
+            }
+        }
+        return 0;
     }
 
     // container_config config;
