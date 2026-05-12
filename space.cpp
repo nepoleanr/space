@@ -16,20 +16,8 @@
 #include <ctime>
 #include <sstream>
 #include <iomanip>
-// #include <filesystem>
+#include "cli.h"
 
-std::string generate_id() {
-    std::time_t t = std::time(nullptr);
-    std::stringstream ss;
-    ss << "container-" << std::hex << t; // e.g., container-6638f2a2
-    return ss.str();
-}
-
-struct container_config {
-    std::string image_name;
-    std::string container_id;
-    char** exec_args;
-};
 
 void setup_cgroups(int pid) {
     // Create a folder directly in the root cgroup mount
@@ -55,14 +43,6 @@ void setup_cgroups(int pid) {
     procs_file.close();
 }
 
-
-// void ensure_dir(const std::string& path) {
-//     try {
-//         std::filesystem::create_directories(path);
-//     } catch (const std::exception& e) {
-//         std::cerr << "Directory error: " << e.what() << std::endl;
-//     }
-// }
 
 // This function sets up the container
 int container_main(void* arg) {
@@ -201,86 +181,14 @@ int main(int argc, char** argv) { // sudo ./space run --name test alpine /bin/sh
     container_config config;
 
     if (command == "run") {
-        // Expected: sudo ./space run --name <container_name> <image> <command>
-        std::string container_name;
-        std::string image_name;
-        char** exec_args = nullptr;
-
-        for (int i = 2; i < argc; i++) {
-            std::string arg = argv[i];
-            if (arg == "--name" && i + 1 < argc) {
-                container_name = argv[++i];
-            } else if (image_name.empty()) {
-                image_name = arg;
-                exec_args = &argv[i+1]; // Everything after image is the command
-            }
-        }
-
-        if (container_name.empty()) {
-            container_name = generate_id(); // Fallback to dynamic ID if no name provided
-        }
-
-        // This makes sure we don't use the run command for an already existing container
-        std::string base_path = "var/lib/space/containers/" + container_name;
-        if (std::filesystem::exists(base_path)) {
-            std::cerr << "Error: Container \"" << container_name << "\" already exists.\n";
-            std::cerr << "Use 'space start' to resume it or 'space rm' to delete it.\n";
-            return 1;
-        }
-
-        config = { image_name, container_name, exec_args };
+        config = cli::run(argc, argv, config);
     } else if (command == "images") {
-        std::string path = "var/lib/space/images";
-        
-        if (!std::filesystem::exists(path)) {
-            std::cout << "No images found. Path does not exist: " << path << std::endl;
-            return 0;
-        }
-
-        std::cout << std::left << std::setw(20) << "IMAGE NAME" << std::endl;
-        std::cout << "--------------------" << std::endl;
-        
-        for (const auto& entry : std::filesystem::directory_iterator(path)) {
-            if (entry.is_directory()) {
-                std::cout << entry.path().filename().string() << std::endl;
-            }
-        }
-        return 0;
-
+       cli::images();
+       return 0;
     } else if (command == "ps") {
-        std::string path = "var/lib/space/containers";
-
-        if (!std::filesystem::exists(path)) {
-            std::cout << "No containers found." << std::endl;
-            return 0;
-        }
-
-        std::cout << std::left << std::setw(25) << "CONTAINER ID" 
-                  << std::setw(20) << "IMAGE" << std::endl;
-        std::cout << "-----------------------------------------------" << std::endl;
-
-        for (const auto& entry : std::filesystem::directory_iterator(path)) {
-            if (entry.is_directory()) {
-                std::string name = entry.path().filename().string();
-                
-                // Read the image name from our "breadcrumb" file
-                std::ifstream img_file(entry.path().string() + "/image_ref.txt");
-                std::string img_name = "unknown";
-                if (img_file.is_open()) {
-                    std::getline(img_file, img_name);
-                }
-
-                std::cout << std::left << std::setw(25) << name 
-                          << std::setw(20) << img_name << std::endl;
-            }
-        }
+        cli::ps();
         return 0;
     }
-
-    // container_config config;
-    // config.image_name = argv[1]; // "alpine"
-    // config.container_id = generate_id();
-    // config.exec_args = &argv[2]; // "/bin/sh"
 
     // Allocate stack memory for the child process
     const int STACK_SIZE = 65536;
