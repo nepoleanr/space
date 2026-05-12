@@ -136,6 +136,26 @@ namespace cli {
         config = { image_name, container_name, exec_args };
         return config;
     }
+
+
+    inline void rm(int argc, char** argv) {
+        if (argc < 3) {
+            std::cerr << "Usage: sudo ./space rm <container_name>\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        std::string container_name = argv[2];
+        std::string base_path = "var/lib/space/containers/" + container_name;
+
+        if (!std::filesystem::exists(base_path)) {
+            std::cerr << "Error: Container \"" << container_name << "\" not found.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        // The equivalent of 'rm -rf'
+        std::filesystem::remove_all(base_path);
+        std::cout << "Container " << container_name << " deleted successfully." << std::endl;
+    }
 }
 
 #endif

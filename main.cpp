@@ -190,6 +190,9 @@ int main(int argc, char** argv) { // sudo ./space run --name test alpine /bin/sh
         return 0;
     } else if (command == "start") {
         config = cli::start(argc, argv, config);
+    } else if (command == "rm") {
+        cli::rm(argc, argv);
+        return 0;
     }
 
     // Allocate stack memory for the child process
