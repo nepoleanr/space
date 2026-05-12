@@ -99,6 +99,43 @@ namespace cli {
             }
         }
     }
+
+    inline container_config start(int argc, char** argv, container_config config) {
+        if (argc < 3) {
+            std::cerr << "Usage: sudo ./space start <container_name> [command]\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        std::string container_name = argv[2];
+        std::string base_path = "var/lib/space/containers/" + container_name;
+
+        if (!std::filesystem::exists(base_path)) {
+            std::cerr << "Error: Container \"" << container_name << "\" not found.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        // Recover the image name from metadata
+        std::ifstream img_file(base_path + "/image_ref.txt");
+        std::string image_name;
+        if (!std::getline(img_file, image_name)) {
+            std::cerr << "Error: Could not determine image for " << container_name << "\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        // If the user provided a command (argv[3]), use it. 
+        // Otherwise, default to /bin/sh
+        char** exec_args;
+        if (argc > 3) {
+            exec_args = &argv[3];
+        } else {
+            // Falling back to /bin/sh
+            static char* default_cmd[] = {(char*)"/bin/sh", NULL};
+            exec_args = default_cmd;
+        }
+
+        config = { image_name, container_name, exec_args };
+        return config;
+    }
 }
 
 #endif
