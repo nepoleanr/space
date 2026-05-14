@@ -186,7 +186,7 @@ int main(int argc, char** argv) { // sudo ./space run --name test alpine /bin/sh
        cli::images();
        return 0;
     } else if (command == "ps") {
-        cli::ps();
+        cli::ps(argc, argv);
         return 0;
     } else if (command == "start") {
         config = cli::start(argc, argv, config);
