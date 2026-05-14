@@ -16,6 +16,26 @@ struct container_config {
     }
 };
 
+namespace cli_helper {
+
+
+    // Identify an active container by checking if its merged directory is currently a mount point.  
+    inline bool is_container_running(const std::string& container_id) {
+        std::ifstream mounts("/proc/mounts");
+        std::string line;
+        // looking for the absolute path of the merged directory
+        std::string target = "/var/lib/space/containers/" + container_id + "/merged";
+
+        while (std::getline(mounts, line)) {
+            if (line.find(target) != std::string::npos) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
 
 namespace cli {
 
@@ -71,31 +91,41 @@ namespace cli {
     }
 
 
-    inline void ps() {
+    inline void ps(int argc, char** argv) {
         std::string path = "var/lib/space/containers";
+        bool show_all = (argc > 2 && std::string(argv[2]) == "-a");
 
         if (!std::filesystem::exists(path)) {
             std::cout << "No containers found." << std::endl;
             return;
         }
 
-        std::cout << std::left << std::setw(25) << "CONTAINER ID" 
-                  << std::setw(20) << "IMAGE" << std::endl;
-        std::cout << "-----------------------------------------------" << std::endl;
+        std::cout << std::left << std::setw(25) << "CONTAINER ID" << std::setw(15) << "IMAGE" 
+                << std::setw(15) << "STATUS" << std::endl;
+        std::cout << "------------------------------------------------------------" << std::endl;
+
 
         for (const auto& entry : std::filesystem::directory_iterator(path)) {
+            // We only care about DIRECTORIES inside 'containers/'
             if (entry.is_directory()) {
-                std::string name = entry.path().filename().string();
-                
-                // Read the image name from our "breadcrumb" file
-                std::ifstream img_file(entry.path().string() + "/image_ref.txt");
-                std::string img_name = "unknown";
-                if (img_file.is_open()) {
-                    std::getline(img_file, img_name);
-                }
+                std::string container_id = entry.path().filename().string();
+                // Here container_id is just the directory name e.g, test, test2, upper, merged, work, etc
 
-                std::cout << std::left << std::setw(25) << name 
-                          << std::setw(20) << img_name << std::endl;
+                bool running = cli_helper::is_container_running(container_id);
+                if (!show_all && !running) continue; // skip this container if it is not running
+
+                // Check if this folder is actually a container by looking for the metadata
+                std::string meta_path = entry.path().string() + "/image_ref.txt";
+                // meta_path = /var/lib/space/containers/test/image_ref.txt. 
+
+                if (std::filesystem::exists(meta_path)) { // Those directories without image_ref.txt are not containers
+                    std::ifstream img_file(meta_path);
+                    std::string img_name;
+                    std::getline(img_file, img_name); // img_name contains alpine or whatever the image from which this container was created)
+
+                    std::cout << std::left << std::setw(25) << container_id 
+                            << std::setw(20) << img_name << std::endl;
+                }
             }
         }
     }
